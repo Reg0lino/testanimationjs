@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creative Pixel Pool</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #020212; /* A very dark, deep blue */
+            color: white;
+            font-family: 'Poppins', sans-serif;
+            text-align: center;
+        }
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #info {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0.6;
+            pointer-events: none;
+            font-size: 1.2em;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Click and Drag the Liquid</div>
+    <canvas id="liquidCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('liquidCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let particlesArray = [];
+        const particleGap = 4; // Decrease for more pixels
+        const GRAVITY = 0.15;
+
+        const mouse = {
+            x: undefined,
+            y: undefined,
+            radius: 200, // Increased area of effect
+            isDown: false,
+        };
+
+        // --- MOUSE EVENT LISTENERS ---
+        window.addEventListener('mousedown', (event) => {
+            mouse.isDown = true;
+            mouse.x = event.x;
+            mouse.y = event.y;
+        });
+
+        window.addEventListener('mouseup', () => {
+            mouse.isDown = false;
+        });
+
+        window.addEventListener('mousemove', (event) => {
+            if (mouse.isDown) {
+                mouse.x = event.x;
+                mouse.y = event.y;
+            }
+        });
+        
+        window.addEventListener('mouseout', () => {
+            mouse.isDown = false;
+        });
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            init(); // Re-initialize particles on resize
+        });
+
+        class Particle {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 2 + 2; // Randomize size for a more organic look
+                this.vx = 0; // Velocity x
+                this.vy = 0; // Velocity y
+                this.density = (Math.random() * 10) + 5; // Affects how much the mouse pushes it
+                this.color = 'hsl(200, 100%, 50%)';
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            update() {
+                // --- Interaction with mouse ---
+                const dxMouse = this.x - mouse.x;
+                const dyMouse = this.y - mouse.y;
+                const distanceMouse = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
+                const maxDist = mouse.radius;
+
+                if (mouse.isDown && distanceMouse < maxDist) {
+                    // Force to push particles away from the mouse, creating a "parting" or "splash" effect
+                    const force = (maxDist - distanceMouse) / maxDist;
+                    const forceDirectionX = dxMouse / distanceMouse;
+                    const forceDirectionY = dyMouse / distanceMouse;
+
+                    // The force is stronger closer to the mouse.
+                    // The density of the particle makes it harder to push.
+                    this.vx += (forceDirectionX * force * 20) / this.density;
+                    this.vy += (forceDirectionY * force * 20) / this.density;
+                }
+
+                // --- Gravity ---
+                this.vy += GRAVITY;
+
+                // --- Apply friction and update position ---
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vx *= 0.97; // Air friction
+                this.vy *= 0.97; // Air friction
+
+                // --- Collision with floor ---
+                if (this.y + this.size > canvas.height) {
+                    this.y = canvas.height - this.size;
+                    this.vy *= -0.3; // Bounce with energy loss
+                    this.vx *= 0.8;  // Floor friction
+                }
+
+                // --- Collision with walls ---
+                if (this.x + this.size > canvas.width) {
+                    this.x = canvas.width - this.size;
+                    this.vx *= -0.5; // Bounce off walls
+                }
+                if (this.x - this.size < 0) {
+                    this.x = 0 + this.size;
+                    this.vx *= -0.5;
+                }
+
+                // --- Creative color effect based on velocity ---
+                const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                // Start with a base blue/cyan color (hue ~180-220)
+                // Shift hue towards purple/pink/red (hue ~280-360) as it moves faster
+                const hue = 200 + (speed * 25);
+                // Lightness increases with speed, making fast particles glow
+                const lightness = 40 + (speed * 4);
+                
+                this.color = `hsl(${hue}, 100%, ${lightness}%)`;
+            }
+        }
+
+        function init() {
+            particlesArray = [];
+            const poolStartY = canvas.height * 0.5; // Start pool at the halfway mark
+            const poolEndY = canvas.height;
+
+            for (let y = poolStartY; y < poolEndY; y += particleGap) {
+                for (let x = 0; x < canvas.width; x += particleGap) {
+                    // Add a little randomness to the position for a more natural look
+                    const jitterX = (Math.random() - 0.5) * particleGap * 0.5;
+                    const jitterY = (Math.random() - 0.5) * particleGap * 0.5;
+                    particlesArray.push(new Particle(x + jitterX, y + jitterY));
+                }
+            }
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < particlesArray.length; i++) {
+                particlesArray[i].update();
+                particlesArray[i].draw();
+            }
+            requestAnimationFrame(animate);
+        }
+
+        init();
+        animate();
+    </script>
+</body>
+</html>
