@@ -14,24 +14,10 @@
             text-align: center;
         }
         canvas {
-            display: block;
             /* Will be shown via JS after start */
             display: none; 
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        #info {
-            position: absolute;
-            top: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            /* Will be shown via JS after start */
-            display: none;
-            opacity: 0.6;
-            pointer-events: none;
-            font-size: 1.2em;
-            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+            /* The canvas is positioned by the flow of the document now */
+            vertical-align: top; /* Prevents a small gap below the canvas */
         }
     </style>
 </head>
@@ -55,19 +41,69 @@
             background: #3c2c94;
             box-shadow: 0 0 20px rgba(136, 120, 255, 0.7);
         }
+        #footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 80px; /* Safe area for home gestures */
+            background-color: #0a0a23;
+            border-top: 1px solid #3c2c94;
+            display: none; /* Shown via JS after start */
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        #info {
+            opacity: 0.7;
+            font-size: 1em;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+        }
+        #orientation-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(2, 2, 18, 0.95);
+            z-index: 100;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+            text-align: center;
+            padding: 20px;
+        }
+        #orientation-overlay svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 20px;
+            animation: rotate-animation 2s infinite linear;
+        }
+        @keyframes rotate-animation {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(90deg); }
+        }
     </style>
 <body>
-    <div id="info">Shake your phone and drag the liquid</div>
     <canvas id="liquidCanvas"></canvas>
+    <div id="footer">
+        <div id="info">Shake your phone and drag the liquid</div>
+    </div>
+    <div id="orientation-overlay">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M16.5,3H7.5C6.12,3,5,4.12,5,5.5v13C5,19.88,6.12,21,7.5,21h9c1.38,0,2.5-1.12,2.5-2.5v-13C19,4.12,17.88,3,16.5,3z M17.5,18.5c0,0.55-0.45,1-1,1h-9c-0.55,0-1-0.45-1-1v-13c0-0.55,0.45-1,1-1h9c0.55,0,1,0.45,1,1V18.5z"/><path d="M0,0h24v24H0V0z" fill="none"/></svg>
+        Please rotate your device to portrait mode.
+    </div>
     <button id="startButton">Start</button>
 
     <script>
         const canvas = document.getElementById('liquidCanvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
 
         let particlesArray = [];
+        let isPaused = false;
+        const FOOTER_HEIGHT = 80; // Must match CSS
         const particleGap = 5; // Adjusted for performance on mobile
         const MAX_GRAVITY = 0.4;
         const gravity = {
@@ -122,9 +158,7 @@
         });
 
         window.addEventListener('resize', () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            init(); // Re-initialize particles on resize
+            resizeCanvas();
         });
 
         class Particle {
@@ -205,16 +239,15 @@
 
         function init() {
             particlesArray = [];
-            const poolStartY = canvas.height * 0.5; // Start pool at the halfway mark
-            const poolEndY = canvas.height;
+            // Calculate the number of particles needed to fill the bottom 1/3 of the canvas
+            const targetArea = canvas.width * (canvas.height / 3);
+            const particleCount = Math.floor(targetArea / (particleGap * particleGap));
+            const poolStartY = canvas.height * (2 / 3);
 
-            for (let y = poolStartY; y < poolEndY; y += particleGap) {
-                for (let x = 0; x < canvas.width; x += particleGap) {
-                    // Add a little randomness to the position for a more natural look
-                    const jitterX = (Math.random() - 0.5) * particleGap * 0.5;
-                    const jitterY = (Math.random() - 0.5) * particleGap * 0.5;
-                    particlesArray.push(new Particle(x + jitterX, y + jitterY));
-                }
+            for (let i = 0; i < particleCount; i++) {
+                const x = Math.random() * canvas.width;
+                const y = poolStartY + (Math.random() * (canvas.height - poolStartY));
+                particlesArray.push(new Particle(x, y));
             }
         }
 
@@ -231,7 +264,30 @@
             gravity.y = (cappedBeta / 90) * MAX_GRAVITY;
         }
 
+        function checkOrientation() {
+            const isLandscape = window.innerWidth > window.innerHeight;
+            const overlay = document.getElementById('orientation-overlay');
+            if (isLandscape) {
+                isPaused = true;
+                overlay.style.display = 'flex';
+            } else {
+                isPaused = false;
+                overlay.style.display = 'none';
+            }
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight - FOOTER_HEIGHT;
+            checkOrientation();
+            init();
+        }
+
         function animate() {
+            if (isPaused) {
+                requestAnimationFrame(animate);
+                return; // Skip the animation frame if paused
+            }
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             for (let i = 0; i < particlesArray.length; i++) {
                 particlesArray[i].update();
@@ -242,7 +298,7 @@
 
         // --- STARTUP LOGIC ---
         const startButton = document.getElementById('startButton');
-        const infoText = document.getElementById('info');
+        const footer = document.getElementById('footer');
 
         startButton.addEventListener('click', () => {
             // 1. Request Fullscreen
@@ -251,6 +307,13 @@
                 elem.requestFullscreen();
             } else if (elem.webkitRequestFullscreen) { /* Safari */
                 elem.webkitRequestFullscreen();
+            }
+
+            // 2. Attempt to lock orientation (will fail on many browsers, but worth a try)
+            try {
+                screen.orientation.lock('portrait-primary');
+            } catch (error) {
+                console.warn("Screen orientation lock is not supported on this browser.");
             }
 
             // 2. Request Gyroscope Permissions (for iOS 13+)
@@ -266,11 +329,11 @@
                 window.addEventListener('deviceorientation', handleOrientation);
             }
 
-            // 3. Start the animation
+            // 4. Start the animation
             startButton.style.display = 'none';
             canvas.style.display = 'block';
-            infoText.style.display = 'block';
-            init();
+            footer.style.display = 'flex';
+            resizeCanvas(); // Initial setup
             animate();
         });
     </script>
