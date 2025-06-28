@@ -261,8 +261,8 @@
                 <input type="range" id="trail-slider" min="0" max="0.5" value="0.1" step="0.01">
             </div>
             <div class="slider-container">
-                <label for="haptics-toggle">Haptics</label>
-                <input type="checkbox" id="haptics-toggle" checked>
+                <label for="haptic-strength-slider">Haptics</label>
+                <input type="range" id="haptic-strength-slider" min="0" max="100" value="50" step="5">
             </div>
         </div>
     </div>
@@ -292,14 +292,14 @@
         let SHAKE_THRESHOLD = 25;
         let baseHue = 200;
         let trailAlpha = 0.1; // Default trail value
-        let hapticsEnabled = true;
+        let hapticStrength = 50; // Default haptic strength, controlled by the slider
 
         // --- Haptic Feedback Patterns ---
         const hapticPatterns = {
-            poke: [10],
-            thud: [20],
-            shake: [50, 30, 30],
-            tick: [5]
+            poke: [1, 2, 1], // Very short and textured
+            thud: [5, 5, 5], // A soft rumble
+            shake: [20, 10, 20, 10, 20], // A more complex pattern
+            tick: [1] // The most minimal tap
         };
 
         // --- Effect Label State ---
@@ -628,8 +628,13 @@
         }
 
         function playHaptic(pattern) {
-            if (hapticsEnabled && navigator.vibrate && pattern) {
-                navigator.vibrate(pattern);
+            if (hapticStrength > 0 && navigator.vibrate && pattern) {
+                const scaledPattern = pattern.map(duration => {
+                    const scaledDuration = Math.round(duration * (hapticStrength / 100));
+                    // If strength is very low but > 0, we still want a minimal 1ms vibration
+                    return Math.max(1, scaledDuration);
+                });
+                navigator.vibrate(scaledPattern);
             }
         }
 
@@ -871,7 +876,7 @@
         document.getElementById('shake-slider').addEventListener('input', (e) => { SHAKE_THRESHOLD = parseInt(e.target.value); playHaptic(hapticPatterns.tick); });
         document.getElementById('hue-slider').addEventListener('input', (e) => { baseHue = parseInt(e.target.value); playHaptic(hapticPatterns.tick); });
         document.getElementById('trail-slider').addEventListener('input', (e) => { trailAlpha = parseFloat(e.target.value); playHaptic(hapticPatterns.tick); });
-        document.getElementById('haptics-toggle').addEventListener('change', (e) => { hapticsEnabled = e.target.checked; });
+        document.getElementById('haptic-strength-slider').addEventListener('input', (e) => { hapticStrength = parseInt(e.target.value); if (hapticStrength > 0) playHaptic(hapticPatterns.tick); });
         document.getElementById('size-slider').addEventListener('input', (e) => {
             particleSizeMultiplier = parseFloat(e.target.value);
             updateParticleSizes();
