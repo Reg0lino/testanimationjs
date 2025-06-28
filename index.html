@@ -336,6 +336,8 @@
             update() {
                 // --- Effect-specific physics ---
                 const currentEffect = effects[currentEffectIndex];
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
 
                 switch (currentEffect) {
                     case 'explosion':
@@ -367,7 +369,6 @@
                     case 'magnetic':
                         const poleY = -50; // North pole above the screen
                         const pullY = 0.1;
-                        const centerX = canvas.width / 2;
                         // Pull towards center horizontally, stronger when further away
                         const pullX = (centerX - this.x) * 0.0005;
 
@@ -383,8 +384,6 @@
                         break;
 
                     case 'atomic':
-                        const centerX = canvas.width / 2;
-                        const centerY = canvas.height / 2;
                         if (this.role === 'electron') {
                             // Orbit the center
                             this.orbitAngle += this.orbitSpeed;
