@@ -102,10 +102,12 @@
         const ctx = canvas.getContext('2d');
 
         let particlesArray = [];
+        let grid;
         let isPaused = false;
         const FOOTER_HEIGHT = 80; // Must match CSS
-        const particleGap = 5; // Adjusted for performance on mobile
+        const particleGap = 8; // Increased to reduce particle count for better performance
         const MAX_GRAVITY = 0.4;
+        const COLLISION_CELL_SIZE = 10;
         const gravity = {
             x: 0,
             y: 0
@@ -161,6 +163,50 @@
             resizeCanvas();
         });
 
+        class Grid {
+            constructor(width, height, cellSize) {
+                this.width = width;
+                this.height = height;
+                this.cellSize = cellSize;
+                this.cols = Math.ceil(width / cellSize);
+                this.rows = Math.ceil(height / cellSize);
+                this.grid = [];
+                this.init();
+            }
+
+            init() {
+                this.grid = [];
+                for (let i = 0; i < this.cols; i++) {
+                    this.grid[i] = [];
+                    for (let j = 0; j < this.rows; j++) {
+                        this.grid[i][j] = [];
+                    }
+                }
+            }
+
+            clear() {
+                for (let i = 0; i < this.cols; i++) {
+                    for (let j = 0; j < this.rows; j++) {
+                        this.grid[i][j].length = 0;
+                    }
+                }
+            }
+
+            add(particle) {
+                const col = Math.floor(particle.x / this.cellSize);
+                const row = Math.floor(particle.y / this.cellSize);
+                if (col >= 0 && col < this.cols && row >= 0 && row < this.rows) {
+                    this.grid[col][row].push(particle);
+                }
+            }
+
+            getNeighbors(particle) {
+                const col = Math.floor(particle.x / this.cellSize);
+                const row = Math.floor(particle.y / this.cellSize);
+                return this.grid[col]?.[row] || [];
+            }
+        }
+
         class Particle {
             constructor(x, y) {
                 this.x = x;
@@ -177,6 +223,27 @@
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
                 ctx.fill();
+            }
+
+            resolveCollision(other) {
+                const dx = this.x - other.x;
+                const dy = this.y - other.y;
+                // Use a fast check to avoid square root if possible
+                const distanceSq = dx * dx + dy * dy;
+                const minDistance = this.size + other.size;
+
+                if (distanceSq < minDistance * minDistance && distanceSq > 0) {
+                    const distance = Math.sqrt(distanceSq);
+                    const overlap = (minDistance - distance) / 2;
+                    const pushX = (dx / distance) * overlap;
+                    const pushY = (dy / distance) * overlap;
+
+                    // Push both particles apart
+                    this.x += pushX;
+                    this.y += pushY;
+                    other.x -= pushX;
+                    other.y -= pushY;
+                }
             }
 
             update() {
@@ -201,6 +268,14 @@
                 // --- Gyro-based Gravity ---
                 this.vx += gravity.x;
                 this.vy += gravity.y;
+
+                // --- Collision with other particles (from the same grid cell) ---
+                const neighbors = grid.getNeighbors(this);
+                for (const neighbor of neighbors) {
+                    if (this !== neighbor) {
+                        this.resolveCollision(neighbor);
+                    }
+                }
 
                 // --- Apply friction and update position ---
                 this.x += this.vx;
@@ -279,6 +354,7 @@
         function resizeCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight - FOOTER_HEIGHT;
+            grid = new Grid(canvas.width, canvas.height, COLLISION_CELL_SIZE);
             checkOrientation();
             init();
         }
@@ -289,6 +365,14 @@
                 return; // Skip the animation frame if paused
             }
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Update grid with new particle positions
+            grid.clear();
+            for (let i = 0; i < particlesArray.length; i++) {
+                grid.add(particlesArray[i]);
+            }
+
+            // Update and draw particles
             for (let i = 0; i < particlesArray.length; i++) {
                 particlesArray[i].update();
                 particlesArray[i].draw();
