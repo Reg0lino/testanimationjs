@@ -30,19 +30,17 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            padding: 20px 40px;
-            font-size: 1.5em;
-            color: white;
-            background: #2a1f68;
-            border: 2px solid #8878ff;
+            padding: 25px 45px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 1.6em;
+            color: #fff;
+            background: #000;
+            border: 2px solid #f0f;
             border-radius: 10px;
             cursor: pointer;
-            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
-            transition: background 0.3s, box-shadow 0.3s;
-        }
-        #startButton:hover {
-            background: #3c2c94;
-            box-shadow: 0 0 20px rgba(136, 120, 255, 0.7);
+            text-shadow: 0 0 5px #fff, 0 0 10px #f0f;
+            box-shadow: 0 0 10px rgba(255, 0, 255, 0.5), 0 0 20px rgba(0, 255, 255, 0.4);
+            position: relative; /* Needed for pseudo-elements */
         }
         #footer {
             position: fixed;
@@ -67,7 +65,9 @@
         }
         /* --- Glitch Effect --- */
         #info::before,
-        #info::after {
+        #info::after,
+        #startButton::before,
+        #startButton::after {
             content: attr(data-text);
             position: absolute;
             top: 0;
@@ -77,12 +77,14 @@
             background: #000;
             overflow: hidden;
         }
-        #info::before {
+        #info::before,
+        #startButton::before {
             left: 2px;
             text-shadow: -1px 0 #ff00ff;
             animation: glitch-anim-1 2.5s infinite linear alternate-reverse;
         }
-        #info::after {
+        #info::after,
+        #startButton::after {
             left: -2px;
             text-shadow: -1px 0 #00ffff;
             animation: glitch-anim-2 3.5s infinite linear alternate-reverse;
@@ -155,7 +157,7 @@
         Please rotate your device to portrait mode.
     </div>
     <div id="failsafe-button"></div>
-    <button id="startButton">Start</button>
+    <button id="startButton" data-text="Start">Start</button>
 
     <script>
         const canvas = document.getElementById('liquidCanvas');
@@ -285,6 +287,11 @@
                 this.density = (Math.random() * 10) + 5; // Affects how much the mouse pushes it
                 this.targetX = x; // For effect-based movement
                 this.targetY = y; // For effect-based movement
+                // --- Properties for Atomic effect ---
+                this.role = 'default'; // 'nucleus' or 'electron'
+                this.orbitRadius = 0;
+                this.orbitAngle = Math.random() * Math.PI * 2;
+                this.orbitSpeed = 0;
                 this.color = 'hsl(200, 100%, 50%)';
             }
 
@@ -317,34 +324,64 @@
             }
 
             update() {
+                // --- Effect-specific physics ---
                 const currentEffect = effects[currentEffectIndex];
-                if (currentEffect !== 'default') {
-                    // Placeholder for future effect logic
-                    // For now, they will just stop moving for non-default effects
-                } else {
-                // --- Interaction with mouse ---
-                const dxMouse = this.x - mouse.x;
-                const dyMouse = this.y - mouse.y;
-                const distanceMouse = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
-                const maxDist = mouse.radius;
 
-                if (mouse.isDown && distanceMouse < maxDist) {
-                    // Force to push particles away from the mouse, creating a "parting" or "splash" effect
-                    const force = (maxDist - distanceMouse) / maxDist;
-                    const forceDirectionX = dxMouse / distanceMouse;
-                    const forceDirectionY = dyMouse / distanceMouse;
+                switch (currentEffect) {
+                    case 'explosion':
+                        // In explosion mode, particles are only affected by friction
+                        this.vx *= 0.98;
+                        this.vy *= 0.98;
+                        break;
 
-                    // The force is stronger closer to the mouse.
-                    // The density of the particle makes it harder to push.
-                    this.vx += (forceDirectionX * force * 20) / this.density;
-                    this.vy += (forceDirectionY * force * 20) / this.density;
+                    case 'atomic':
+                        const centerX = canvas.width / 2;
+                        const centerY = canvas.height / 2;
+                        if (this.role === 'electron') {
+                            // Orbit the center
+                            this.orbitAngle += this.orbitSpeed;
+                            this.targetX = centerX + this.orbitRadius * Math.cos(this.orbitAngle);
+                            this.targetY = centerY + this.orbitRadius * Math.sin(this.orbitAngle);
+                            // Move towards the target orbit position
+                            this.vx += (this.targetX - this.x) * 0.1;
+                            this.vy += (this.targetY - this.y) * 0.1;
+                        } else { // Nucleus
+                            // Gently pull towards the center
+                            this.vx += (centerX - this.x) * 0.01;
+                            this.vy += (centerY - this.y) * 0.01;
+                        }
+                        this.vx *= 0.9; // Strong friction to prevent chaos
+                        this.vy *= 0.9;
+                        break;
+
+                    case 'default':
+                        // --- Interaction with mouse ---
+                        const dxMouse = this.x - mouse.x;
+                        const dyMouse = this.y - mouse.y;
+                        const distanceMouse = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
+                        const maxDist = mouse.radius;
+
+                        if (mouse.isDown && distanceMouse < maxDist) {
+                            const force = (maxDist - distanceMouse) / maxDist;
+                            const forceDirectionX = dxMouse / distanceMouse;
+                            const forceDirectionY = dyMouse / distanceMouse;
+                            this.vx += (forceDirectionX * force * 20) / this.density;
+                            this.vy += (forceDirectionY * force * 20) / this.density;
+                        }
+
+                        // --- Gyro-based Gravity ---
+                        this.vx += gravity.x;
+                        this.vy += gravity.y;
+
+                        // --- Air friction ---
+                        this.vx *= 0.97;
+                        this.vy *= 0.97;
+                        break;
                 }
 
-                // --- Gyro-based Gravity ---
-                this.vx += gravity.x;
-                this.vy += gravity.y;
+                // --- Common physics for all effects ---
 
-                // --- Collision with other particles (from the same grid cell) ---
+                // Collision with other particles
                 const neighbors = grid.getNeighbors(this);
                 for (const neighbor of neighbors) {
                     if (this !== neighbor) {
@@ -352,20 +389,16 @@
                     }
                 }
 
-                // --- Apply friction and update position ---
+                // Update position
                 this.x += this.vx;
                 this.y += this.vy;
-                this.vx *= 0.97; // Air friction
-                this.vy *= 0.97; // Air friction
 
-                // --- Collision with floor ---
+                // Boundary collisions
                 if (this.y + this.size > canvas.height) {
                     this.y = canvas.height - this.size;
                     this.vy *= -0.3; // Bounce with energy loss
                     this.vx *= 0.8;  // Floor friction
                 }
-
-                // --- Collision with walls ---
                 if (this.x + this.size > canvas.width) {
                     this.x = canvas.width - this.size;
                     this.vx *= -0.5; // Bounce off walls
@@ -374,13 +407,10 @@
                     this.x = 0 + this.size;
                     this.vx *= -0.5;
                 }
-
-                // --- Collision with top ---
                 if (this.y - this.size < 0) {
                     this.y = 0 + this.size;
                     this.vy *= -0.3; // Bounce with energy loss
                 }
-                } // End of 'default' effect logic
 
                 // --- Creative color effect based on velocity ---
                 const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
@@ -458,7 +488,40 @@
             currentEffectIndex = (currentEffectIndex + 1) % effects.length;
             const newEffect = effects[currentEffectIndex];
             console.log("Triggering effect:", newEffect);
-            // Here you would add logic to initialize the new effect
+
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            if (newEffect === 'explosion') {
+                for (const particle of particlesArray) {
+                    const dx = particle.x - centerX;
+                    const dy = particle.y - centerY;
+                    const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const explosionForce = 10 + Math.random() * 15;
+                    particle.vx = (dx / distance) * explosionForce;
+                    particle.vy = (dy / distance) * explosionForce;
+                }
+            } else if (newEffect === 'atomic') {
+                const electronCount = Math.min(12, Math.floor(particlesArray.length * 0.1));
+                // Shuffle particles to pick random electrons
+                particlesArray.sort(() => 0.5 - Math.random());
+
+                for (let i = 0; i < particlesArray.length; i++) {
+                    const particle = particlesArray[i];
+                    if (i < electronCount) {
+                        particle.role = 'electron';
+                        // Assign orbits based on screen size
+                        const maxOrbit = Math.min(centerX, centerY) * 0.8;
+                        particle.orbitRadius = (maxOrbit / electronCount) * (i + 1) * (0.8 + Math.random() * 0.4);
+                        particle.orbitSpeed = 0.02 + Math.random() * 0.03;
+                    } else {
+                        particle.role = 'nucleus';
+                        // Give nucleus particles a little nudge towards the center
+                        particle.vx = (Math.random() - 0.5) * 2;
+                        particle.vy = (Math.random() - 0.5) * 2;
+                    }
+                }
+            }
         }
 
         function animate() {
