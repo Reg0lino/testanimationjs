@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Creative Pixel Pool</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Gyro Pixel Pool</title>
     <style>
         body {
             margin: 0;
@@ -15,6 +15,8 @@
         }
         canvas {
             display: block;
+            /* Will be shown via JS after start */
+            display: none; 
             position: absolute;
             top: 0;
             left: 0;
@@ -24,6 +26,8 @@
             top: 30px;
             left: 50%;
             transform: translateX(-50%);
+            /* Will be shown via JS after start */
+            display: none;
             opacity: 0.6;
             pointer-events: none;
             font-size: 1.2em;
@@ -31,9 +35,31 @@
         }
     </style>
 </head>
+    <style>
+        #startButton {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 1.5em;
+            color: white;
+            background: #2a1f68;
+            border: 2px solid #8878ff;
+            border-radius: 10px;
+            cursor: pointer;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+        #startButton:hover {
+            background: #3c2c94;
+            box-shadow: 0 0 20px rgba(136, 120, 255, 0.7);
+        }
+    </style>
 <body>
-    <div id="info">Click and Drag the Liquid</div>
+    <div id="info">Shake your phone and drag the liquid</div>
     <canvas id="liquidCanvas"></canvas>
+    <button id="startButton">Start</button>
 
     <script>
         const canvas = document.getElementById('liquidCanvas');
@@ -42,8 +68,12 @@
         canvas.height = window.innerHeight;
 
         let particlesArray = [];
-        const particleGap = 4; // Decrease for more pixels
-        const GRAVITY = 0.15;
+        const particleGap = 5; // Adjusted for performance on mobile
+        const MAX_GRAVITY = 0.4;
+        const gravity = {
+            x: 0,
+            y: 0
+        };
 
         const mouse = {
             x: undefined,
@@ -67,6 +97,23 @@
             if (mouse.isDown) {
                 mouse.x = event.x;
                 mouse.y = event.y;
+            }
+        });
+
+        // --- TOUCH EVENT LISTENERS ---
+        window.addEventListener('touchstart', (event) => {
+            mouse.isDown = true;
+            mouse.x = event.touches[0].clientX;
+            mouse.y = event.touches[0].clientY;
+        });
+        window.addEventListener('touchend', () => {
+            mouse.isDown = false;
+        });
+        window.addEventListener('touchmove', (event) => {
+            if (mouse.isDown) {
+                event.preventDefault(); // Prevents scrolling
+                mouse.x = event.touches[0].clientX;
+                mouse.y = event.touches[0].clientY;
             }
         });
         
@@ -117,8 +164,9 @@
                     this.vy += (forceDirectionY * force * 20) / this.density;
                 }
 
-                // --- Gravity ---
-                this.vy += GRAVITY;
+                // --- Gyro-based Gravity ---
+                this.vx += gravity.x;
+                this.vy += gravity.y;
 
                 // --- Apply friction and update position ---
                 this.x += this.vx;
@@ -170,6 +218,19 @@
             }
         }
 
+        function handleOrientation(event) {
+            // Gamma is the left-to-right tilt in degrees, where right is positive
+            // Beta is the front-to-back tilt in degrees, where front is positive
+            const gamma = event.gamma; // range is -90 to 90
+            const beta = event.beta;   // range is -180 to 180
+
+            // We need to cap the beta value for sensible gravity
+            const cappedBeta = Math.max(-90, Math.min(90, beta));
+
+            gravity.x = (gamma / 90) * MAX_GRAVITY;
+            gravity.y = (cappedBeta / 90) * MAX_GRAVITY;
+        }
+
         function animate() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             for (let i = 0; i < particlesArray.length; i++) {
@@ -179,8 +240,39 @@
             requestAnimationFrame(animate);
         }
 
-        init();
-        animate();
+        // --- STARTUP LOGIC ---
+        const startButton = document.getElementById('startButton');
+        const infoText = document.getElementById('info');
+
+        startButton.addEventListener('click', () => {
+            // 1. Request Fullscreen
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) { /* Safari */
+                elem.webkitRequestFullscreen();
+            }
+
+            // 2. Request Gyroscope Permissions (for iOS 13+)
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', handleOrientation);
+                        }
+                    }).catch(console.error);
+            } else {
+                // Handle non-iOS 13+ devices
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
+
+            // 3. Start the animation
+            startButton.style.display = 'none';
+            canvas.style.display = 'block';
+            infoText.style.display = 'block';
+            init();
+            animate();
+        });
     </script>
 </body>
 </html>
