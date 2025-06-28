@@ -207,6 +207,29 @@
             margin-top: -6.5px;
             box-shadow: 0 0 5px #f0f;
         }
+        input[type=checkbox] {
+            -webkit-appearance: none;
+            appearance: none;
+            background-color: transparent;
+            margin: 0;
+            width: 1.15em;
+            height: 1.15em;
+            border: 2px solid #f0f;
+            border-radius: 3px;
+            display: grid;
+            place-content: center;
+            cursor: pointer;
+        }
+        input[type=checkbox]::before {
+            content: "";
+            width: 0.65em;
+            height: 0.65em;
+            transform: scale(0);
+            transition: 120ms transform ease-in-out;
+            background-color: #f0f;
+            box-shadow: 0 0 5px #f0f;
+        }
+        input[type=checkbox]:checked::before { transform: scale(1); }
     </style>
 <body>
     <canvas id="liquidCanvas"></canvas>
@@ -237,6 +260,10 @@
                 <label for="trail-slider">Trails</label>
                 <input type="range" id="trail-slider" min="0" max="0.5" value="0.1" step="0.01">
             </div>
+            <div class="slider-container">
+                <label for="haptics-toggle">Haptics</label>
+                <input type="checkbox" id="haptics-toggle" checked>
+            </div>
         </div>
     </div>
     <div id="orientation-overlay">
@@ -265,12 +292,13 @@
         let SHAKE_THRESHOLD = 25;
         let baseHue = 200;
         let trailAlpha = 0.1; // Default trail value
+        let hapticsEnabled = true;
 
         // --- Haptic Feedback Patterns ---
         const hapticPatterns = {
-            poke: [20],
-            thud: [40],
-            shake: [150, 75, 75],
+            poke: [10],
+            thud: [20],
+            shake: [50, 30, 30],
             tick: [5]
         };
 
@@ -600,7 +628,7 @@
         }
 
         function playHaptic(pattern) {
-            if (navigator.vibrate && pattern) {
+            if (hapticsEnabled && navigator.vibrate && pattern) {
                 navigator.vibrate(pattern);
             }
         }
@@ -753,15 +781,15 @@
 
             // Draw the effect label
             if (effectLabel.opacity > 0) {
-                ctx.font = "bold 48px 'Press Start 2P'";
+                ctx.font = "bold 24px 'Press Start 2P'"; // Reduced font size
                 ctx.textAlign = 'center';
-                ctx.globalAlpha = effectLabel.opacity;
+                ctx.globalAlpha = effectLabel.opacity * 0.8; // Reduced opacity
 
                 // Glitch effect
                 ctx.fillStyle = '#ff00ff';
-                ctx.fillText(effectLabel.text, effectLabel.x + 3, effectLabel.y + 3);
+                ctx.fillText(effectLabel.text, effectLabel.x + 2, effectLabel.y + 2);
                 ctx.fillStyle = '#00ffff';
-                ctx.fillText(effectLabel.text, effectLabel.x - 3, effectLabel.y - 3);
+                ctx.fillText(effectLabel.text, effectLabel.x - 2, effectLabel.y - 2);
                 ctx.fillStyle = '#ffffff';
                 ctx.fillText(effectLabel.text, effectLabel.x, effectLabel.y);
 
@@ -843,6 +871,7 @@
         document.getElementById('shake-slider').addEventListener('input', (e) => { SHAKE_THRESHOLD = parseInt(e.target.value); playHaptic(hapticPatterns.tick); });
         document.getElementById('hue-slider').addEventListener('input', (e) => { baseHue = parseInt(e.target.value); playHaptic(hapticPatterns.tick); });
         document.getElementById('trail-slider').addEventListener('input', (e) => { trailAlpha = parseFloat(e.target.value); playHaptic(hapticPatterns.tick); });
+        document.getElementById('haptics-toggle').addEventListener('change', (e) => { hapticsEnabled = e.target.checked; });
         document.getElementById('size-slider').addEventListener('input', (e) => {
             particleSizeMultiplier = parseFloat(e.target.value);
             updateParticleSizes();
