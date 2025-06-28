@@ -155,6 +155,12 @@
         #cycle-effect-button.effect-swarm { border-color: #4dff4d; } /* Green */
         #cycle-effect-button.effect-wave { border-color: #4dc3ff; } /* Deep Sky Blue */
         #cycle-effect-button.effect-magnetic { border-color: #a64dff; } /* Blue Violet */
+        #cycle-effect-button.effect-tornado { border-color: #a9a9a9; } /* Dark Gray */
+        #cycle-effect-button.effect-geomorph { border-color: #f0e68c; } /* Khaki */
+        #cycle-effect-button.effect-pixelsort { border-color: #ff69b4; } /* Hot Pink */
+        #cycle-effect-button.effect-constellation { border-color: #add8e6; } /* Light Blue */
+        #cycle-effect-button.effect-bounceball { border-color: #90ee90; } /* Light Green */
+        #cycle-effect-button.effect-unravel { border-color: #f4a460; } /* Sandy Brown */
 
         #settings-toggle {
             font-size: 2em;
@@ -258,11 +264,11 @@
             </div>
             <div class="slider-container">
                 <label for="trail-slider">Trails</label>
-                <input type="range" id="trail-slider" min="0" max="0.5" value="0.1" step="0.01">
+                <input type="range" id="trail-slider" min="0" max="100" value="70" step="1">
             </div>
             <div class="slider-container">
                 <label for="haptic-strength-slider">Haptics</label>
-                <input type="range" id="haptic-strength-slider" min="0" max="100" value="50" step="5">
+                <input type="range" id="haptic-strength-slider" min="0" max="100" value="15" step="5">
             </div>
         </div>
     </div>
@@ -280,7 +286,7 @@
         let grid;
         let currentEffectIndex = 0;
         // New playlist that interleaves 'default' between each custom effect
-        const effectsPlaylist = ['default', 'explosion', 'default', 'atomic', 'default', 'swarm', 'default', 'wave', 'default', 'magnetic'];
+        const effectsPlaylist = ['default', 'explosion', 'default', 'atomic', 'default', 'swarm', 'default', 'wave', 'default', 'magnetic', 'default', 'tornado', 'default', 'geomorph', 'default', 'pixelsort', 'default', 'constellation', 'default', 'bounceball', 'default', 'unravel'];
         let isPaused = false;
         let FOOTER_HEIGHT = 80; // Will be updated if panel is expanded
         const particleGap = 8; // Increased to reduce particle count for better performance
@@ -291,15 +297,17 @@
         let particleSizeMultiplier = 1;
         let SHAKE_THRESHOLD = 25;
         let baseHue = 200;
-        let trailAlpha = 0.1; // Default trail value
-        let hapticStrength = 50; // Default haptic strength, controlled by the slider
+        // Calculated from the default slider value of 70: 0.99 - (70/100) * (0.99 - 0.05)
+        let trailAlpha = 0.332;
+        let hapticStrength = 15; // Default haptic strength, controlled by the slider
 
         // --- Haptic Feedback Patterns ---
         const hapticPatterns = {
             poke: [1, 2, 1], // Very short and textured
-            thud: [5, 5, 5], // A soft rumble
+            thud: [15, 10, 5], // A soft rumble for ball impact
             shake: [20, 10, 20, 10, 20], // A more complex pattern
-            tick: [1] // The most minimal tap
+            tick: [1], // The most minimal tap
+            wave: [5, 30, 5] // A soft, rolling pulse
         };
 
         // --- Effect Label State ---
@@ -319,6 +327,12 @@
         // --- Effect-specific state ---
         const swarmLeader = { x: 0, y: 0, vx: 0, vy: 0 };
         let waveTime = 0;
+        const waveHapticState = { lastSin: 0 };
+        const explosionState = { phase: 'none', timer: 0 };
+        const geoMorphState = { shape: 'circle', shapes: ['circle', 'square', 'triangle'] };
+        const bounceBallState = { x: 0, y: 0, vx: 0, vy: 0, radius: 60 };
+        let constellationLines = [];
+        let unravelState = { isUnraveling: false, leadParticle: null };
 
 
 
@@ -495,6 +509,12 @@
 
                 switch (currentEffect) {
                     case 'explosion':
+                        if (explosionState.phase === 'imploding') {
+                            // Anchor force: pull hard to the center
+                            const pullForce = 0.1;
+                            this.vx += (centerX - this.x) * pullForce;
+                            this.vy += (centerY - this.y) * pullForce;
+                        }
                         // No anchor force, just lets particles fly and be affected by friction
                         break;
                     
@@ -529,6 +549,48 @@
                         }
                         break;
 
+                    case 'tornado':
+                        const rotationSpeed = 0.1;
+                        const upwardForce = -0.1;
+                        const pullToCenterForce = 0.001;
+                        const dx = this.x - centerX;
+                        const dy = this.y - centerY;
+                        this.vx += (dx * -pullToCenterForce) - (dy * rotationSpeed);
+                        this.vy += (dy * -pullToCenterForce) + (dx * rotationSpeed) + upwardForce;
+                        if (this.y < 0) this.y = canvas.height;
+                        break;
+
+                    case 'geomorph':
+                    case 'pixelsort':
+                    case 'constellation':
+                    case 'unravel':
+                        // Anchor force: move towards target position
+                        this.vx += (this.targetX - this.x) * 0.05;
+                        this.vy += (this.targetY - this.y) * 0.05;
+                        if (unravelState.isUnraveling && this === unravelState.leadParticle) {
+                            this.vx *= 1.05; // Accelerate the lead particle
+                            this.vy *= 1.05;
+                        }
+                        break;
+
+                    case 'bounceball':
+                        const distToBallCenter = Math.sqrt(
+                            Math.pow(this.x - bounceBallState.x, 2) +
+                            Math.pow(this.y - bounceBallState.y, 2)
+                        );
+                        // If outside the ball, pull it in
+                        if (distToBallCenter > bounceBallState.radius) {
+                            const pullInForce = 0.01;
+                            this.vx += (bounceBallState.x - this.x) * pullInForce;
+                            this.vy += (bounceBallState.y - this.y) * pullInForce;
+                        } else {
+                            // If inside, give it some random motion
+                            this.vx += (Math.random() - 0.5) * 0.1;
+                            this.vy += (Math.random() - 0.5) * 0.1;
+                        }
+                        break;
+
+
                     case 'atomic':
                         // Anchor force: Pull towards orbit or nucleus
                         if (this.role === 'electron') {
@@ -552,7 +614,7 @@
 
                 // --- Layer 3: Universal Damping (Friction) ---
                 // This makes disturbances fade away, allowing anchor forces to take over.
-                const friction = currentEffect === 'atomic' ? 0.9 : 0.95; // Atomic needs stronger friction
+                const friction = (currentEffect === 'atomic' || currentEffect === 'bounceball') ? 0.9 : 0.95;
                 this.vx *= friction;
                 this.vy *= friction;
 
@@ -568,23 +630,19 @@
 
                 if (this.y + this.size > canvas.height) {
                     this.y = canvas.height - this.size;
-                    if (Math.abs(this.vy) > 1) playHaptic(hapticPatterns.thud); // Haptic for hard impact
                     this.vy *= -0.3; // Bounce with energy loss
                     this.vx *= 0.8;  // Floor friction
                 }
                 if (this.x + this.size > canvas.width) {
                     this.x = canvas.width - this.size;
-                    if (Math.abs(this.vx) > 1) playHaptic(hapticPatterns.thud);
                     this.vx *= -0.5; // Bounce off walls
                 }
                 if (this.x - this.size < 0) {
                     this.x = 0 + this.size;
-                    if (Math.abs(this.vx) > 1) playHaptic(hapticPatterns.thud);
                     this.vx *= -0.5;
                 }
                 if (this.y - this.size < 0) {
                     this.y = 0 + this.size;
-                    if (Math.abs(this.vy) > 1) playHaptic(hapticPatterns.thud);
                     this.vy *= -0.3; // Bounce with energy loss
                 }
 
@@ -707,14 +765,82 @@
             const centerY = canvas.height / 2;
 
             if (newEffect === 'explosion') {
-                for (const particle of particlesArray) {
-                    const dx = particle.x - centerX;
-                    const dy = particle.y - centerY;
-                    const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-                    const explosionForce = 10 + Math.random() * 15;
-                    particle.vx = (dx / distance) * explosionForce;
-                    particle.vy = (dy / distance) * explosionForce;
+                explosionState.phase = 'imploding';
+                explosionState.timer = Date.now();
+            } else if (newEffect === 'geomorph') {
+                const currentShapeIndex = geoMorphState.shapes.indexOf(geoMorphState.shape);
+                geoMorphState.shape = geoMorphState.shapes[(currentShapeIndex + 1) % geoMorphState.shapes.length];
+                const radius = Math.min(centerX, centerY) * 0.7;
+                particlesArray.forEach((p, i) => {
+                    const angle = (i / particlesArray.length) * Math.PI * 2;
+                    if (geoMorphState.shape === 'circle') {
+                        p.targetX = centerX + radius * Math.cos(angle);
+                        p.targetY = centerY + radius * Math.sin(angle);
+                    } else if (geoMorphState.shape === 'square') {
+                        const side = Math.floor(particlesArray.length / 4);
+                        const pos = i % side;
+                        if (i < side) { p.targetX = centerX - radius + (pos/side)*radius*2; p.targetY = centerY - radius; }
+                        else if (i < side*2) { p.targetX = centerX + radius; p.targetY = centerY - radius + (pos/side)*radius*2; }
+                        else if (i < side*3) { p.targetX = centerX + radius - (pos/side)*radius*2; p.targetY = centerY + radius; }
+                        else { p.targetX = centerX - radius; p.targetY = centerY + radius - (pos/side)*radius*2; }
+                    } else if (geoMorphState.shape === 'triangle') {
+                        const side = Math.floor(particlesArray.length / 3);
+                        const pos = i % side;
+                        if (i < side) { p.targetX = centerX + (pos/side - 0.5)*radius*2; p.targetY = centerY - radius*0.7; }
+                        else if (i < side*2) { p.targetX = centerX + radius - (pos/side)*radius; p.targetY = centerY - radius*0.7 + (pos/side)*radius*1.7; }
+                        else { p.targetX = centerX - radius + (pos/side)*radius; p.targetY = centerY - radius*0.7 + (1-pos/side)*radius*1.7; }
+                    }
+                });
+            } else if (newEffect === 'pixelsort') {
+                particlesArray.sort((a, b) => a.y - b.y || a.x - b.x);
+                const rows = {};
+                particlesArray.forEach(p => {
+                    const rowY = Math.round(p.y / 10) * 10;
+                    if (!rows[rowY]) rows[rowY] = [];
+                    rows[rowY].push(p);
+                });
+                for (const y in rows) {
+                    rows[y].sort((a, b) => (baseHue + Math.sqrt(a.vx*a.vx + a.vy*a.vy)*25) - (baseHue + Math.sqrt(b.vx*b.vx + b.vy*b.vy)*25));
+                    rows[y].forEach((p, i) => {
+                        p.targetX = (canvas.width / rows[y].length) * i;
+                        p.targetY = parseInt(y);
+                    });
                 }
+            } else if (newEffect === 'constellation') {
+                constellationLines = [];
+                particlesArray.forEach(p => {
+                    p.targetX = Math.random() * canvas.width;
+                    p.targetY = Math.random() * canvas.height;
+                });
+                setTimeout(() => { // After particles have moved
+                    particlesArray.forEach(p1 => {
+                        const neighbors = grid.getNeighbors(p1);
+                        if (neighbors.length > 1) {
+                            const p2 = neighbors[Math.floor(Math.random() * neighbors.length)];
+                            if (p1 !== p2) constellationLines.push({p1, p2});
+                        }
+                    });
+                }, 1000);
+            } else if (newEffect === 'bounceball') {
+                bounceBallState.x = centerX;
+                bounceBallState.y = 50;
+                bounceBallState.vx = (Math.random() - 0.5) * 10;
+                bounceBallState.vy = 0;
+            } else if (newEffect === 'unravel') {
+                unravelState.isUnraveling = true;
+                const radius = 2;
+                particlesArray.forEach((p, i) => {
+                    const angle = i * 0.2;
+                    p.targetX = centerX + radius * angle * Math.cos(angle);
+                    p.targetY = centerY + radius * angle * Math.sin(angle);
+                });
+                unravelState.leadParticle = particlesArray[particlesArray.length - 1];
+                setTimeout(() => {
+                    if (unravelState.leadParticle) {
+                        unravelState.leadParticle.vx = (Math.random() - 0.5) * 40;
+                        unravelState.leadParticle.vy = (Math.random() - 0.5) * 40;
+                    }
+                }, 1000);
             } else if (newEffect === 'atomic') {
                 const electronCount = Math.min(12, Math.floor(particlesArray.length * 0.1));
                 // Shuffle particles to pick random electrons
@@ -757,7 +883,46 @@
 
             // Update effect-specific states
             const currentEffect = effectsPlaylist[currentEffectIndex];
-            if (currentEffect === 'swarm') {
+
+            if (explosionState.phase === 'imploding' && Date.now() - explosionState.timer > 250) {
+                explosionState.phase = 'detonating';
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                for (const particle of particlesArray) {
+                    const dx = particle.x - centerX;
+                    const dy = particle.y - centerY;
+                    const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const explosionForce = 20 + Math.random() * 25; // More violent
+                    particle.vx = (dx / distance) * explosionForce;
+                    particle.vy = (dy / distance) * explosionForce;
+                }
+            }
+
+            if (trailAlpha > 0) {
+                ctx.fillStyle = `rgba(2, 2, 18, ${trailAlpha})`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            } else {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // Update effect-specific states
+            if (currentEffect === 'bounceball') {
+                bounceBallState.vy += 0.4; // Gravity for the ball
+                bounceBallState.x += bounceBallState.vx;
+                bounceBallState.y += bounceBallState.vy;
+                let didBounce = false;
+                if (bounceBallState.y + bounceBallState.radius > canvas.height) { bounceBallState.y = canvas.height - bounceBallState.radius; bounceBallState.vy *= -0.8; didBounce = true; }
+                if (bounceBallState.y - bounceBallState.radius < 0) { bounceBallState.y = bounceBallState.radius; bounceBallState.vy *= -0.8; didBounce = true; }
+                if (bounceBallState.x + bounceBallState.radius > canvas.width) { bounceBallState.x = canvas.width - bounceBallState.radius; bounceBallState.vx *= -0.8; didBounce = true; }
+                if (bounceBallState.x - bounceBallState.radius < 0) { bounceBallState.x = bounceBallState.radius; bounceBallState.vx *= -0.8; didBounce = true; }
+                if (didBounce) {
+                    playHaptic(hapticPatterns.thud);
+                }
+            } else if (currentEffect === 'constellation') {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+                ctx.lineWidth = 0.5;
+                constellationLines.forEach(line => { ctx.beginPath(); ctx.moveTo(line.p1.x, line.p1.y); ctx.lineTo(line.p2.x, line.p2.y); ctx.stroke(); });
+            } else if (currentEffect === 'swarm') {
                 // Update swarm leader's position
                 swarmLeader.vx += (Math.random() - 0.5) * 0.5;
                 swarmLeader.vy += (Math.random() - 0.5) * 0.5;
@@ -770,6 +935,12 @@
                 if (swarmLeader.y < 0 || swarmLeader.y > canvas.height) swarmLeader.vy *= -1;
             } else if (currentEffect === 'wave') {
                 waveTime += 0.02;
+                // Rhythmic haptic for wave
+                const currentSin = Math.sin(waveTime * 4); // Use a multiplier to get more frequent pulses
+                if (waveHapticState.lastSin < 0 && currentSin >= 0) {
+                    playHaptic(hapticPatterns.wave);
+                }
+                waveHapticState.lastSin = currentSin;
             }
 
             // Update grid with new particle positions
@@ -875,7 +1046,12 @@
         document.getElementById('gravity-slider').addEventListener('input', (e) => { MAX_GRAVITY = parseFloat(e.target.value); playHaptic(hapticPatterns.tick); });
         document.getElementById('shake-slider').addEventListener('input', (e) => { SHAKE_THRESHOLD = parseInt(e.target.value); playHaptic(hapticPatterns.tick); });
         document.getElementById('hue-slider').addEventListener('input', (e) => { baseHue = parseInt(e.target.value); playHaptic(hapticPatterns.tick); });
-        document.getElementById('trail-slider').addEventListener('input', (e) => { trailAlpha = parseFloat(e.target.value); playHaptic(hapticPatterns.tick); });
+        document.getElementById('trail-slider').addEventListener('input', (e) => {
+            const sliderValue = parseInt(e.target.value);
+            // Invert the value: 100 on slider = low alpha (long trails), 0 = high alpha (short trails)
+            trailAlpha = 0.99 - (sliderValue / 100) * (0.99 - 0.05);
+            playHaptic(hapticPatterns.tick);
+        });
         document.getElementById('haptic-strength-slider').addEventListener('input', (e) => { hapticStrength = parseInt(e.target.value); if (hapticStrength > 0) playHaptic(hapticPatterns.tick); });
         document.getElementById('size-slider').addEventListener('input', (e) => {
             particleSizeMultiplier = parseFloat(e.target.value);
