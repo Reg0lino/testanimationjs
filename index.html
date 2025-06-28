@@ -235,7 +235,7 @@
             </div>
             <div class="slider-container">
                 <label for="trail-slider">Trails</label>
-                <input type="range" id="trail-slider" min="0" max="0.5" value="0" step="0.01">
+                <input type="range" id="trail-slider" min="0" max="0.5" value="0.1" step="0.01">
             </div>
         </div>
     </div>
@@ -264,7 +264,25 @@
         let particleSizeMultiplier = 1;
         let SHAKE_THRESHOLD = 25;
         let baseHue = 200;
-        let trailAlpha = 0;
+        let trailAlpha = 0.1; // Default trail value
+
+        // --- Haptic Feedback Patterns ---
+        const hapticPatterns = {
+            poke: [20],
+            thud: [40],
+            shake: [150, 75, 75],
+            tick: [5]
+        };
+
+        // --- Effect Label State ---
+        const effectLabel = {
+            text: '',
+            x: 0,
+            y: 0,
+            opacity: 0,
+            lifeTimer: null,
+            isFading: false
+        };
 
         // --- Shake Detection ---
         const SHAKE_COOLDOWN = 1000; // 1 second
@@ -291,6 +309,7 @@
         // --- MOUSE EVENT LISTENERS ---
         window.addEventListener('mousedown', (event) => {
             if (event.target.closest('#footer')) return; // Ignore clicks on the UI
+            playHaptic(hapticPatterns.poke); // Haptic feedback for poke
             mouse.isDown = true;
             mouse.x = event.x;
             mouse.y = event.y;
@@ -310,6 +329,7 @@
         // --- TOUCH EVENT LISTENERS ---
         window.addEventListener('touchstart', (event) => {
             if (event.target.closest('#footer')) return; // Ignore touches on the UI
+            playHaptic(hapticPatterns.poke); // Haptic feedback for poke
             mouse.isDown = true;
             mouse.x = event.touches[0].clientX;
             mouse.y = event.touches[0].clientY;
@@ -520,19 +540,23 @@
 
                 if (this.y + this.size > canvas.height) {
                     this.y = canvas.height - this.size;
+                    if (Math.abs(this.vy) > 1) playHaptic(hapticPatterns.thud); // Haptic for hard impact
                     this.vy *= -0.3; // Bounce with energy loss
                     this.vx *= 0.8;  // Floor friction
                 }
                 if (this.x + this.size > canvas.width) {
                     this.x = canvas.width - this.size;
+                    if (Math.abs(this.vx) > 1) playHaptic(hapticPatterns.thud);
                     this.vx *= -0.5; // Bounce off walls
                 }
                 if (this.x - this.size < 0) {
                     this.x = 0 + this.size;
+                    if (Math.abs(this.vx) > 1) playHaptic(hapticPatterns.thud);
                     this.vx *= -0.5;
                 }
                 if (this.y - this.size < 0) {
                     this.y = 0 + this.size;
+                    if (Math.abs(this.vy) > 1) playHaptic(hapticPatterns.thud);
                     this.vy *= -0.3; // Bounce with energy loss
                 }
 
@@ -575,6 +599,12 @@
             gravity.y = (cappedBeta / 90) * MAX_GRAVITY;
         }
 
+        function playHaptic(pattern) {
+            if (navigator.vibrate && pattern) {
+                navigator.vibrate(pattern);
+            }
+        }
+
         function handleMotion(event) {
             const currentTime = new Date().getTime();
             if (currentTime - lastShakeTime < SHAKE_COOLDOWN) return;
@@ -608,11 +638,34 @@
             init();
         }
 
+        function formatEffectName(name) {
+            if (!name) return '';
+            return name.charAt(0).toUpperCase() + name.slice(1);
+        }
+
+        function showEffectLabel(text) {
+            clearTimeout(effectLabel.lifeTimer);
+            effectLabel.text = text;
+            effectLabel.x = canvas.width * (0.2 + Math.random() * 0.6);
+            effectLabel.y = canvas.height * (0.2 + Math.random() * 0.6);
+            effectLabel.opacity = 1;
+            effectLabel.isFading = false;
+
+            effectLabel.lifeTimer = setTimeout(() => {
+                effectLabel.isFading = true;
+            }, 1000); // Stay for 1 second before fading
+        }
+
         function triggerNextEffect() {
             currentEffectIndex = (currentEffectIndex + 1) % effectsPlaylist.length;
             const newEffect = effectsPlaylist[currentEffectIndex];
             console.log("Triggering effect:", newEffect);
-            // Update cycle button class for visual feedback
+            playHaptic(hapticPatterns.shake); // Haptic for shake/cycle
+
+            if (newEffect !== 'default') {
+                showEffectLabel(formatEffectName(newEffect));
+            }
+
             const cycleButton = document.getElementById('cycle-effect-button');
             cycleButton.className = ''; // Clear old classes
             cycleButton.classList.add(`effect-${newEffect}`);
@@ -697,6 +750,27 @@
                 particlesArray[i].update();
                 particlesArray[i].draw();
             }
+
+            // Draw the effect label
+            if (effectLabel.opacity > 0) {
+                ctx.font = "bold 48px 'Press Start 2P'";
+                ctx.textAlign = 'center';
+                ctx.globalAlpha = effectLabel.opacity;
+
+                // Glitch effect
+                ctx.fillStyle = '#ff00ff';
+                ctx.fillText(effectLabel.text, effectLabel.x + 3, effectLabel.y + 3);
+                ctx.fillStyle = '#00ffff';
+                ctx.fillText(effectLabel.text, effectLabel.x - 3, effectLabel.y - 3);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(effectLabel.text, effectLabel.x, effectLabel.y);
+
+                ctx.globalAlpha = 1; // Reset alpha
+
+                if (effectLabel.isFading) {
+                    effectLabel.opacity -= 0.02;
+                }
+            }
             requestAnimationFrame(animate);
         }
 
@@ -765,13 +839,14 @@
         });
 
         // Slider Event Listeners
-        document.getElementById('gravity-slider').addEventListener('input', (e) => MAX_GRAVITY = parseFloat(e.target.value));
-        document.getElementById('shake-slider').addEventListener('input', (e) => SHAKE_THRESHOLD = parseInt(e.target.value));
-        document.getElementById('hue-slider').addEventListener('input', (e) => baseHue = parseInt(e.target.value));
-        document.getElementById('trail-slider').addEventListener('input', (e) => trailAlpha = parseFloat(e.target.value));
+        document.getElementById('gravity-slider').addEventListener('input', (e) => { MAX_GRAVITY = parseFloat(e.target.value); playHaptic(hapticPatterns.tick); });
+        document.getElementById('shake-slider').addEventListener('input', (e) => { SHAKE_THRESHOLD = parseInt(e.target.value); playHaptic(hapticPatterns.tick); });
+        document.getElementById('hue-slider').addEventListener('input', (e) => { baseHue = parseInt(e.target.value); playHaptic(hapticPatterns.tick); });
+        document.getElementById('trail-slider').addEventListener('input', (e) => { trailAlpha = parseFloat(e.target.value); playHaptic(hapticPatterns.tick); });
         document.getElementById('size-slider').addEventListener('input', (e) => {
             particleSizeMultiplier = parseFloat(e.target.value);
             updateParticleSizes();
+            playHaptic(hapticPatterns.tick);
         });
 
         function updateParticleSizes() {
