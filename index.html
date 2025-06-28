@@ -212,7 +212,7 @@
     <canvas id="liquidCanvas"></canvas>
     <div id="footer">
         <div id="footer-top-row">
-            <div id="info" data-text="Shake & Poke Liquid">Shake & Poke Liquid</div>
+            <div id="info" data-text="Shake | Poke | Pour">Shake | Poke | Pour</div>
             <div id="cycle-effect-button" class="effect-default"></div>
             <div id="settings-toggle">⚙️</div>
         </div>
@@ -290,6 +290,7 @@
 
         // --- MOUSE EVENT LISTENERS ---
         window.addEventListener('mousedown', (event) => {
+            if (event.target.closest('#footer')) return; // Ignore clicks on the UI
             mouse.isDown = true;
             mouse.x = event.x;
             mouse.y = event.y;
@@ -308,6 +309,7 @@
 
         // --- TOUCH EVENT LISTENERS ---
         window.addEventListener('touchstart', (event) => {
+            if (event.target.closest('#footer')) return; // Ignore touches on the UI
             mouse.isDown = true;
             mouse.x = event.touches[0].clientX;
             mouse.y = event.touches[0].clientY;
@@ -423,47 +425,54 @@
             }
 
             update() {
-                // --- Effect-specific physics ---
+                // --- Layer 1: User Interaction Force (Disturbance) - ALWAYS APPLIES ---
+                const dxMouse = this.x - mouse.x;
+                const dyMouse = this.y - mouse.y;
+                const distanceMouse = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
+                const maxDist = mouse.radius;
+
+                if (mouse.isDown && distanceMouse < maxDist) {
+                    const force = (maxDist - distanceMouse) / maxDist;
+                    const forceDirectionX = dxMouse / distanceMouse;
+                    const forceDirectionY = dyMouse / distanceMouse;
+                    // Apply a strong, temporary disturbance force
+                    this.vx += (forceDirectionX * force * 20) / this.density;
+                    this.vy += (forceDirectionY * force * 20) / this.density;
+                }
+
+                // --- Layer 2: Animation & Environmental Forces ---
                 const currentEffect = effectsPlaylist[currentEffectIndex];
                 const centerX = canvas.width / 2;
                 const centerY = canvas.height / 2;
 
                 switch (currentEffect) {
                     case 'explosion':
-                        // In explosion mode, particles are only affected by friction
-                        this.vx *= 0.98;
-                        this.vy *= 0.98;
+                        // No anchor force, just lets particles fly and be affected by friction
                         break;
                     
                     case 'swarm':
-                        // Move towards the swarm leader
+                        // Anchor force: Move towards the swarm leader
                         const dxLeader = swarmLeader.x - this.x;
                         const dyLeader = swarmLeader.y - this.y;
                         this.vx += dxLeader * 0.0005;
                         this.vy += dyLeader * 0.0005;
-                        this.vx *= 0.95;
-                        this.vy *= 0.95;
                         break;
 
                     case 'wave':
+                        // Anchor force: Gently move towards the target Y on the sine wave
                         const waveAmplitude = canvas.height * 0.2;
                         const waveFrequency = 10 / canvas.width;
                         this.targetY = (canvas.height / 2) + waveAmplitude * Math.sin(this.x * waveFrequency + waveTime);
-                        // Gently move towards the target Y
                         this.vy += (this.targetY - this.y) * 0.01;
-                        this.vx *= 0.95;
-                        this.vy *= 0.9;
                         break;
 
                     case 'magnetic':
+                        // Anchor force: Pull towards top/center
                         const poleY = -50; // North pole above the screen
                         const pullY = 0.1;
-                        // Pull towards center horizontally, stronger when further away
                         const pullX = (centerX - this.x) * 0.0005;
-
                         this.vy += pullY;
                         this.vx += pullX;
-
                         // If particle hits the bottom, teleport it to the top
                         if (this.y > canvas.height) {
                             this.y = poleY;
@@ -473,63 +482,42 @@
                         break;
 
                     case 'atomic':
+                        // Anchor force: Pull towards orbit or nucleus
                         if (this.role === 'electron') {
-                            // Orbit the center
                             this.orbitAngle += this.orbitSpeed;
                             this.targetX = centerX + this.orbitRadius * Math.cos(this.orbitAngle);
                             this.targetY = centerY + this.orbitRadius * Math.sin(this.orbitAngle);
-                            // Move towards the target orbit position
                             this.vx += (this.targetX - this.x) * 0.1;
                             this.vy += (this.targetY - this.y) * 0.1;
                         } else { // Nucleus
-                            // Gently pull towards the center
                             this.vx += (centerX - this.x) * 0.01;
                             this.vy += (centerY - this.y) * 0.01;
                         }
-                        this.vx *= 0.9; // Strong friction to prevent chaos
-                        this.vy *= 0.9;
                         break;
 
                     case 'default':
-                        // --- Interaction with mouse ---
-                        const dxMouse = this.x - mouse.x;
-                        const dyMouse = this.y - mouse.y;
-                        const distanceMouse = Math.sqrt(dxMouse * dxMouse + dyMouse * dyMouse);
-                        const maxDist = mouse.radius;
-
-                        if (mouse.isDown && distanceMouse < maxDist) {
-                            const force = (maxDist - distanceMouse) / maxDist;
-                            const forceDirectionX = dxMouse / distanceMouse;
-                            const forceDirectionY = dyMouse / distanceMouse;
-                            this.vx += (forceDirectionX * force * 20) / this.density;
-                            this.vy += (forceDirectionY * force * 20) / this.density;
-                        }
-
-                        // --- Gyro-based Gravity ---
+                        // Environmental force: Gyro-based Gravity
                         this.vx += gravity.x;
                         this.vy += gravity.y;
-
-                        // --- Air friction ---
-                        this.vx *= 0.97;
-                        this.vy *= 0.97;
                         break;
                 }
 
-                // --- Common physics for all effects ---
+                // --- Layer 3: Universal Damping (Friction) ---
+                // This makes disturbances fade away, allowing anchor forces to take over.
+                const friction = currentEffect === 'atomic' ? 0.9 : 0.95; // Atomic needs stronger friction
+                this.vx *= friction;
+                this.vy *= friction;
 
-                // Collision with other particles
+                // --- Universal Collision & Position Update ---
                 const neighbors = grid.getNeighbors(this);
                 for (const neighbor of neighbors) {
                     if (this !== neighbor) {
                         this.resolveCollision(neighbor);
                     }
                 }
-
-                // Update position
                 this.x += this.vx;
                 this.y += this.vy;
 
-                // Boundary collisions
                 if (this.y + this.size > canvas.height) {
                     this.y = canvas.height - this.size;
                     this.vy *= -0.3; // Bounce with energy loss
